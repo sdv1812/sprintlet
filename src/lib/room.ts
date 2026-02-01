@@ -3,7 +3,7 @@ import { RoomSnapshot, RoomMeta, Member, FIBONACCI_DECK } from '@/types';
 import { nanoid } from 'nanoid';
 
 export async function createRoom(roomName: string): Promise<string> {
-  const roomCode = nanoid(8);
+  const roomCode = nanoid(8).toUpperCase();
   const meta: RoomMeta = {
     roomName,
     deck: [...FIBONACCI_DECK],
@@ -20,10 +20,11 @@ export async function createRoom(roomName: string): Promise<string> {
 }
 
 export async function getRoomSnapshot(roomCode: string): Promise<RoomSnapshot | null> {
+  const normalizedRoomCode = roomCode.toUpperCase();
   const [metaData, membersHash, votesHash] = await Promise.all([
-    redis.get(`room:${roomCode}:meta`),
-    redis.hgetall(`room:${roomCode}:members`),
-    redis.hgetall(`room:${roomCode}:votes`),
+    redis.get(`room:${normalizedRoomCode}:meta`),
+    redis.hgetall(`room:${normalizedRoomCode}:members`),
+    redis.hgetall(`room:${normalizedRoomCode}:votes`),
   ]);
 
   if (!metaData) return null;
@@ -58,8 +59,8 @@ export async function getRoomSnapshot(roomCode: string): Promise<RoomSnapshot | 
   // Remove inactive members
   if (inactiveClientIds.length > 0) {
     await Promise.all([
-      redis.hdel(`room:${roomCode}:members`, ...inactiveClientIds),
-      redis.hdel(`room:${roomCode}:votes`, ...inactiveClientIds),
+      redis.hdel(`room:${normalizedRoomCode}:members`, ...inactiveClientIds),
+      redis.hdel(`room:${normalizedRoomCode}:votes`, ...inactiveClientIds),
     ]);
   }
 
@@ -86,7 +87,8 @@ export async function joinMember(
   clientId: string,
   name: string
 ): Promise<RoomSnapshot | null> {
-  const snapshot = await getRoomSnapshot(roomCode);
+  const normalizedRoomCode = roomCode.toUpperCase();
+  const snapshot = await getRoomSnapshot(normalizedRoomCode);
   if (!snapshot) return null;
 
   const member: Member = {
@@ -96,22 +98,23 @@ export async function joinMember(
   };
 
   await Promise.all([
-    redis.hset(`room:${roomCode}:members`, { [clientId]: JSON.stringify(member) }),
-    redis.expire(`room:${roomCode}:meta`, ROOM_TTL),
-    redis.expire(`room:${roomCode}:members`, ROOM_TTL),
-    redis.expire(`room:${roomCode}:votes`, ROOM_TTL),
+    redis.hset(`room:${normalizedRoomCode}:members`, { [clientId]: JSON.stringify(member) }),
+    redis.expire(`room:${normalizedRoomCode}:meta`, ROOM_TTL),
+    redis.expire(`room:${normalizedRoomCode}:members`, ROOM_TTL),
+    redis.expire(`room:${normalizedRoomCode}:votes`, ROOM_TTL),
   ]);
 
-  return getRoomSnapshot(roomCode);
+  return getRoomSnapshot(normalizedRoomCode);
 }
 
 export async function updateLastSeen(roomCode: string, clientId: string): Promise<void> {
-  const memberData = await redis.hget(`room:${roomCode}:members`, clientId);
+  const normalizedRoomCode = roomCode.toUpperCase();
+  const memberData = await redis.hget(`room:${normalizedRoomCode}:members`, clientId);
   if (memberData) {
     // Upstash Redis may return parsed object or string
     const member: Member = typeof memberData === 'string' ? JSON.parse(memberData) : memberData;
     member.lastSeenAt = Date.now();
-    await redis.hset(`room:${roomCode}:members`, { [clientId]: JSON.stringify(member) });
+    await redis.hset(`room:${normalizedRoomCode}:members`, { [clientId]: JSON.stringify(member) });
   }
 }
 
@@ -120,23 +123,25 @@ export async function castVote(
   clientId: string,
   vote: string
 ): Promise<RoomSnapshot | null> {
-  const snapshot = await getRoomSnapshot(roomCode);
+  const normalizedRoomCode = roomCode.toUpperCase();
+  const snapshot = await getRoomSnapshot(normalizedRoomCode);
   if (!snapshot) return null;
 
   await Promise.all([
-    redis.hset(`room:${roomCode}:votes`, { [clientId]: vote }),
-    updateLastSeen(roomCode, clientId),
-    refreshTTL(roomCode),
+    redis.hset(`room:${normalizedRoomCode}:votes`, { [clientId]: vote }),
+    updateLastSeen(normalizedRoomCode, clientId),
+    refreshTTL(normalizedRoomCode),
   ]);
 
-  return getRoomSnapshot(roomCode);
+  return getRoomSnapshot(normalizedRoomCode);
 }
 
 export async function revealVotes(
   roomCode: string,
   clientId: string
 ): Promise<RoomSnapshot | null> {
-  const snapshot = await getRoomSnapshot(roomCode);
+  const normalizedRoomCode = roomCode.toUpperCase();
+  const snapshot = await getRoomSnapshot(normalizedRoomCode);
   if (!snapshot) return null;
 
   const meta = snapshot.meta;
@@ -145,15 +150,16 @@ export async function revealVotes(
   meta.updatedAt = Date.now();
 
   await Promise.all([
-    redis.set(`room:${roomCode}:meta`, JSON.stringify(meta), { ex: ROOM_TTL }),
-    updateLastSeen(roomCode, clientId),
+    redis.set(`room:${normalizedRoomCode}:meta`, JSON.stringify(meta), { ex: ROOM_TTL }),
+    updateLastSeen(normalizedRoomCode, clientId),
   ]);
 
-  return getRoomSnapshot(roomCode);
+  return getRoomSnapshot(normalizedRoomCode);
 }
 
 export async function resetVotes(roomCode: string, clientId: string): Promise<RoomSnapshot | null> {
-  const snapshot = await getRoomSnapshot(roomCode);
+  const normalizedRoomCode = roomCode.toUpperCase();
+  const snapshot = await getRoomSnapshot(normalizedRoomCode);
   if (!snapshot) return null;
 
   const meta = snapshot.meta;
@@ -162,12 +168,12 @@ export async function resetVotes(roomCode: string, clientId: string): Promise<Ro
   meta.updatedAt = Date.now();
 
   await Promise.all([
-    redis.set(`room:${roomCode}:meta`, JSON.stringify(meta), { ex: ROOM_TTL }),
-    redis.del(`room:${roomCode}:votes`),
-    updateLastSeen(roomCode, clientId),
+    redis.set(`room:${normalizedRoomCode}:meta`, JSON.stringify(meta), { ex: ROOM_TTL }),
+    redis.del(`room:${normalizedRoomCode}:votes`),
+    updateLastSeen(normalizedRoomCode, clientId),
   ]);
 
-  return getRoomSnapshot(roomCode);
+  return getRoomSnapshot(normalizedRoomCode);
 }
 
 export async function updateStoryTitle(
@@ -175,7 +181,8 @@ export async function updateStoryTitle(
   clientId: string,
   storyTitle: string
 ): Promise<RoomSnapshot | null> {
-  const snapshot = await getRoomSnapshot(roomCode);
+  const normalizedRoomCode = roomCode.toUpperCase();
+  const snapshot = await getRoomSnapshot(normalizedRoomCode);
   if (!snapshot) return null;
 
   const meta = snapshot.meta;
@@ -184,24 +191,26 @@ export async function updateStoryTitle(
   meta.updatedAt = Date.now();
 
   await Promise.all([
-    redis.set(`room:${roomCode}:meta`, JSON.stringify(meta), { ex: ROOM_TTL }),
-    updateLastSeen(roomCode, clientId),
+    redis.set(`room:${normalizedRoomCode}:meta`, JSON.stringify(meta), { ex: ROOM_TTL }),
+    updateLastSeen(normalizedRoomCode, clientId),
   ]);
 
-  return getRoomSnapshot(roomCode);
+  return getRoomSnapshot(normalizedRoomCode);
 }
 
 export async function leaveMember(roomCode: string, clientId: string): Promise<void> {
+  const normalizedRoomCode = roomCode.toUpperCase();
   await Promise.all([
-    redis.hdel(`room:${roomCode}:members`, clientId),
-    redis.hdel(`room:${roomCode}:votes`, clientId),
+    redis.hdel(`room:${normalizedRoomCode}:members`, clientId),
+    redis.hdel(`room:${normalizedRoomCode}:votes`, clientId),
   ]);
 }
 
 async function refreshTTL(roomCode: string): Promise<void> {
+  const normalizedRoomCode = roomCode.toUpperCase();
   await Promise.all([
-    redis.expire(`room:${roomCode}:meta`, ROOM_TTL),
-    redis.expire(`room:${roomCode}:members`, ROOM_TTL),
-    redis.expire(`room:${roomCode}:votes`, ROOM_TTL),
+    redis.expire(`room:${normalizedRoomCode}:meta`, ROOM_TTL),
+    redis.expire(`room:${normalizedRoomCode}:members`, ROOM_TTL),
+    redis.expire(`room:${normalizedRoomCode}:votes`, ROOM_TTL),
   ]);
 }
