@@ -158,7 +158,7 @@ export default function PokerPage() {
               How it works
             </h3>
             <ul className="space-y-2 text-gray-700 dark:text-gray-300">
-              <li>• Create a room and share the room code with your team</li>
+              <li>• Create a room and share the link or room code with your team</li>
               <li>• Each team member picks a card for the story</li>
               <li>• Reveal all votes simultaneously</li>
               <li>• Discuss and converge on an estimate</li>

@@ -45,8 +45,7 @@ export default function Home() {
               <ul className="text-sm text-gray-500 dark:text-gray-400 space-y-2">
                 <li>✓ Multi-location support</li>
                 <li>✓ Holiday tracking</li>
-                <li>✓ Focus factor</li>
-                <li>✓ Save configurations</li>
+                <li>✓ Individual leave tracking</li>
               </ul>
               <div className="mt-6 text-indigo-600 dark:text-indigo-400 font-medium group-hover:underline">
                 Calculate Capacity →

@@ -22,9 +22,18 @@ export default function RoomPage() {
   const [storyTitle, setStoryTitle] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const roomUrl = typeof window !== 'undefined' ? `${window.location.origin}/room/${roomCode}` : '';
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(roomUrl);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
 
   useEffect(() => {
     const id = getClientId();
@@ -310,8 +319,17 @@ export default function RoomPage() {
             ← Leave Room
           </Link>
           <div className="flex items-center gap-4">
-            <div className="text-sm text-gray-600 dark:text-gray-300">
-              Room Code: <span className="font-mono font-bold">{roomCode}</span>
+            <div className="flex items-center gap-2">
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                Room Code: <span className="font-mono font-bold">{roomCode}</span>
+              </div>
+              <button
+                onClick={handleCopyLink}
+                className="px-3 py-1 text-xs bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded transition-colors"
+                title="Copy room link"
+              >
+                {copySuccess ? '✓ Copied!' : '🔗 Copy Link'}
+              </button>
             </div>
             <div
               className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
