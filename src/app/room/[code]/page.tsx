@@ -24,6 +24,11 @@ export default function RoomPage() {
   const [editNameValue, setEditNameValue] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
   const [usePolling, setUsePolling] = useState(false);
+  const [votingInProgress, setVotingInProgress] = useState(false);
+  const [revealingInProgress, setRevealingInProgress] = useState(false);
+  const [resettingInProgress, setResettingInProgress] = useState(false);
+  const [updatingStoryInProgress, setUpdatingStoryInProgress] = useState(false);
+  const [savingNameInProgress, setSavingNameInProgress] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -114,11 +119,13 @@ export default function RoomPage() {
 
   const startPolling = useCallback(() => {
     setConnectionStatus('connected');
-    
+
     // Initial fetch
     const fetchRoomSnapshot = async () => {
       try {
-        const response = await fetch(`/api/sse?roomCode=${roomCode}&clientId=${clientId}&snapshot=true`);
+        const response = await fetch(
+          `/api/sse?roomCode=${roomCode}&clientId=${clientId}&snapshot=true`
+        );
         if (response.ok) {
           const data = await response.json();
           if (data.snapshot) {
@@ -161,7 +168,7 @@ export default function RoomPage() {
           clearInterval(pollingIntervalRef.current);
         }
         pollingIntervalRef.current = setInterval(fetchRoomSnapshot, 3000);
-        
+
         sendMessage({ type: 'HEARTBEAT', roomCode, clientId });
         if (heartbeatIntervalRef.current) {
           clearInterval(heartbeatIntervalRef.current);
@@ -273,7 +280,16 @@ export default function RoomPage() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [roomCode, clientId, userName, sendMessage, handleServerMessage, disconnect, startPolling, usePolling]);
+  }, [
+    roomCode,
+    clientId,
+    userName,
+    sendMessage,
+    handleServerMessage,
+    disconnect,
+    startPolling,
+    usePolling,
+  ]);
 
   useEffect(() => {
     if (!clientId || !userName) return;
@@ -285,24 +301,35 @@ export default function RoomPage() {
     };
   }, [clientId, userName, connectToRoom, disconnect]);
 
-  const handleVote = (vote: string) => {
-    if (snapshot?.meta.revealed) return;
+  const handleVote = async (vote: string) => {
+    if (snapshot?.meta.revealed || votingInProgress) return;
 
+    setVotingInProgress(true);
     setSelectedVote(vote);
-    sendMessage({ type: 'CAST_VOTE', roomCode, clientId, vote });
+    await sendMessage({ type: 'CAST_VOTE', roomCode, clientId, vote });
+    setTimeout(() => setVotingInProgress(false), 300);
   };
 
-  const handleReveal = () => {
-    sendMessage({ type: 'REVEAL', roomCode, clientId });
+  const handleReveal = async () => {
+    if (revealingInProgress) return;
+    setRevealingInProgress(true);
+    await sendMessage({ type: 'REVEAL', roomCode, clientId });
+    setTimeout(() => setRevealingInProgress(false), 300);
   };
 
-  const handleReset = () => {
-    sendMessage({ type: 'RESET', roomCode, clientId });
+  const handleReset = async () => {
+    if (resettingInProgress) return;
+    setResettingInProgress(true);
+    await sendMessage({ type: 'RESET', roomCode, clientId });
     setSelectedVote(null);
+    setTimeout(() => setResettingInProgress(false), 300);
   };
 
-  const handleUpdateStory = () => {
-    sendMessage({ type: 'UPDATE_STORY', roomCode, clientId, storyTitle });
+  const handleUpdateStory = async () => {
+    if (updatingStoryInProgress) return;
+    setUpdatingStoryInProgress(true);
+    await sendMessage({ type: 'UPDATE_STORY', roomCode, clientId, storyTitle });
+    setTimeout(() => setUpdatingStoryInProgress(false), 300);
   };
 
   const handleNameSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -321,14 +348,17 @@ export default function RoomPage() {
     setIsEditingName(true);
   };
 
-  const handleSaveNewName = () => {
-    if (editNameValue.trim()) {
+  const handleSaveNewName = async () => {
+    if (editNameValue.trim() && !savingNameInProgress) {
+      setSavingNameInProgress(true);
       setUserName(editNameValue.trim());
       setUserNameState(editNameValue.trim());
       setIsEditingName(false);
       // Reconnect with new name
       disconnect();
-      setTimeout(() => connectToRoom(), 100);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      connectToRoom();
+      setTimeout(() => setSavingNameInProgress(false), 500);
     }
   };
 
@@ -486,14 +516,20 @@ export default function RoomPage() {
                     <button
                       key={value}
                       onClick={() => handleVote(value)}
-                      disabled={revealed}
-                      className={`aspect-[2/3] rounded-lg border-2 text-2xl font-bold transition-all ${
+                      disabled={revealed || votingInProgress}
+                      className={`aspect-[2/3] rounded-lg border-2 text-2xl font-bold transition-all relative ${
                         selectedVote === value
                           ? 'bg-indigo-600 text-white border-indigo-600 scale-105'
                           : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 hover:border-indigo-400 hover:scale-105'
-                      } ${revealed ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      } ${revealed || votingInProgress ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                     >
-                      {value}
+                      {votingInProgress && selectedVote === value ? (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      ) : (
+                        value
+                      )}
                     </button>
                   ))}
                 </div>
@@ -505,16 +541,23 @@ export default function RoomPage() {
                   {!revealed ? (
                     <button
                       onClick={handleReveal}
-                      disabled={votedCount === 0}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      disabled={votedCount === 0 || revealingInProgress}
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
+                      {revealingInProgress && (
+                        <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                      )}
                       Reveal Votes ({votedCount}/{members.length})
                     </button>
                   ) : (
                     <button
                       onClick={handleReset}
-                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
+                      disabled={resettingInProgress}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
+                      {resettingInProgress && (
+                        <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
+                      )}
                       Reset Votes
                     </button>
                   )}
@@ -595,13 +638,19 @@ export default function RoomPage() {
                                 />
                                 <button
                                   onClick={handleSaveNewName}
-                                  className="text-green-600 dark:text-green-400 text-xs hover:underline"
+                                  disabled={savingNameInProgress}
+                                  className="text-green-600 dark:text-green-400 text-xs hover:underline disabled:opacity-50 flex items-center gap-1"
                                 >
-                                  ✓
+                                  {savingNameInProgress ? (
+                                    <div className="w-3 h-3 border-2 border-green-600 dark:border-green-400 border-t-transparent rounded-full animate-spin"></div>
+                                  ) : (
+                                    '✓'
+                                  )}
                                 </button>
                                 <button
                                   onClick={handleCancelEditName}
-                                  className="text-red-600 dark:text-red-400 text-xs hover:underline"
+                                  disabled={savingNameInProgress}
+                                  className="text-red-600 dark:text-red-400 text-xs hover:underline disabled:opacity-50"
                                 >
                                   ✕
                                 </button>
