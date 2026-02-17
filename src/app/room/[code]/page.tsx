@@ -23,9 +23,12 @@ export default function RoomPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
+  const [usePolling, setUsePolling] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const sseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const roomUrl = typeof window !== 'undefined' ? `${window.location.origin}/room/${roomCode}` : '';
 
@@ -55,6 +58,14 @@ export default function RoomPage() {
     if (heartbeatIntervalRef.current) {
       clearInterval(heartbeatIntervalRef.current);
       heartbeatIntervalRef.current = null;
+    }
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    if (sseTimeoutRef.current) {
+      clearTimeout(sseTimeoutRef.current);
+      sseTimeoutRef.current = null;
     }
   }, []);
 
@@ -101,6 +112,73 @@ export default function RoomPage() {
     [clientId, router]
   );
 
+  const startPolling = useCallback(() => {
+    setConnectionStatus('connected');
+    
+    // Initial fetch
+    const fetchRoomSnapshot = async () => {
+      try {
+        const response = await fetch(`/api/sse?roomCode=${roomCode}&clientId=${clientId}&snapshot=true`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.snapshot) {
+            handleServerMessage({ type: 'ROOM_SNAPSHOT', roomCode, snapshot: data.snapshot });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching room snapshot:', error);
+      }
+    };
+
+    // Fetch immediately
+    fetchRoomSnapshot();
+
+    // Send JOIN_ROOM message
+    sendMessage({ type: 'JOIN_ROOM', roomCode, clientId, name: userName });
+
+    // Poll every 3 seconds
+    pollingIntervalRef.current = setInterval(fetchRoomSnapshot, 3000);
+
+    // Heartbeat for polling mode
+    heartbeatIntervalRef.current = setInterval(() => {
+      sendMessage({ type: 'HEARTBEAT', roomCode, clientId });
+    }, 60000);
+
+    // Pause polling when tab is hidden
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = null;
+        }
+      } else {
+        fetchRoomSnapshot();
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+        }
+        pollingIntervalRef.current = setInterval(fetchRoomSnapshot, 3000);
+        
+        sendMessage({ type: 'HEARTBEAT', roomCode, clientId });
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+        }
+        heartbeatIntervalRef.current = setInterval(() => {
+          sendMessage({ type: 'HEARTBEAT', roomCode, clientId });
+        }, 60000);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [roomCode, clientId, userName, sendMessage, handleServerMessage]);
+
   const connectToRoom = useCallback(() => {
     setConnectionStatus('connecting');
 
@@ -109,10 +187,29 @@ export default function RoomPage() {
       eventSourceRef.current.close();
     }
 
+    // If polling mode is enabled, use polling instead of SSE
+    if (usePolling) {
+      startPolling();
+      return;
+    }
+
+    // Set a timeout to detect if SSE connection fails
+    sseTimeoutRef.current = setTimeout(() => {
+      console.warn('SSE connection timeout - falling back to polling');
+      setUsePolling(true);
+      disconnect();
+      startPolling();
+    }, 10000); // 10 second timeout
+
     // Connect via SSE
     const eventSource = new EventSource(`/api/sse?roomCode=${roomCode}&clientId=${clientId}`);
 
     eventSource.onopen = () => {
+      // Clear the timeout since connection succeeded
+      if (sseTimeoutRef.current) {
+        clearTimeout(sseTimeoutRef.current);
+        sseTimeoutRef.current = null;
+      }
       setConnectionStatus('connected');
       // Send JOIN_ROOM message
       sendMessage({ type: 'JOIN_ROOM', roomCode, clientId, name: userName });
@@ -176,7 +273,7 @@ export default function RoomPage() {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [roomCode, clientId, userName, sendMessage, handleServerMessage]);
+  }, [roomCode, clientId, userName, sendMessage, handleServerMessage, disconnect, startPolling, usePolling]);
 
   useEffect(() => {
     if (!clientId || !userName) return;

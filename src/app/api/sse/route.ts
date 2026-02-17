@@ -21,9 +21,21 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const roomCode = searchParams.get('roomCode');
   const clientId = searchParams.get('clientId');
+  const snapshotOnly = searchParams.get('snapshot') === 'true';
 
   if (!roomCode || !clientId) {
     return new Response('Missing roomCode or clientId', { status: 400 });
+  }
+
+  // If snapshot mode, just return the current room state as JSON
+  if (snapshotOnly) {
+    try {
+      const snapshot = await getRoomSnapshot(roomCode);
+      return Response.json({ snapshot });
+    } catch (error) {
+      console.error('Error getting room snapshot:', error);
+      return Response.json({ snapshot: null }, { status: 500 });
+    }
   }
 
   // Create a readable stream for SSE
