@@ -404,7 +404,14 @@ export default function RoomPage() {
     );
   }
 
-  const members = Object.entries(snapshot.members);
+  // Sort members: current user first, then by join time (stable order)
+  const members = Object.entries(snapshot.members).sort(([idA, memberA], [idB, memberB]) => {
+    // Current user always first
+    if (idA === clientId) return -1;
+    if (idB === clientId) return 1;
+    // Then sort by join time (lastSeenAt as proxy for join order)
+    return memberA.lastSeenAt - memberB.lastSeenAt;
+  });
   const votes = snapshot.votes;
   const revealed = snapshot.meta.revealed;
   const votedCount = Object.keys(votes).length;
