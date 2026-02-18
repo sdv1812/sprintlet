@@ -206,7 +206,7 @@ export default function RoomPage() {
       setUsePolling(true);
       disconnect();
       startPolling();
-    }, 10000); // 10 second timeout
+    }, 3000); // 3 second timeout for faster fallback
 
     // Connect via SSE
     const eventSource = new EventSource(`/api/sse?roomCode=${roomCode}&clientId=${clientId}`);
