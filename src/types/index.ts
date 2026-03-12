@@ -1,18 +1,4 @@
-export const FIBONACCI_DECK = [
-  '0',
-  '0.5',
-  '1',
-  '2',
-  '3',
-  '5',
-  '8',
-  '13',
-  '20',
-  '40',
-  '100',
-  '?',
-  '☕',
-] as const;
+export const FIBONACCI_DECK = ['0', '1', '2', '3', '5', '8', '13', '?', '☕'] as const;
 
 export type DeckValue = (typeof FIBONACCI_DECK)[number];
 

@@ -355,14 +355,15 @@ export default function RoomPage() {
   const handleSaveNewName = async () => {
     if (editNameValue.trim() && !savingNameInProgress) {
       setSavingNameInProgress(true);
-      setUserName(editNameValue.trim());
-      setUserNameState(editNameValue.trim());
+      const newName = editNameValue.trim();
+      setUserName(newName);
+      setUserNameState(newName);
       setIsEditingName(false);
-      // Reconnect with new name
-      disconnect();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      connectToRoom();
-      setTimeout(() => setSavingNameInProgress(false), 500);
+
+      // Send updated name immediately
+      await sendMessage({ type: 'JOIN_ROOM', roomCode, clientId, name: newName });
+
+      setTimeout(() => setSavingNameInProgress(false), 300);
     }
   };
 
@@ -430,15 +431,9 @@ export default function RoomPage() {
 
         const sum = numericVotes.reduce((a, b) => a + b, 0);
         const avg = sum / numericVotes.length;
-        const sorted = [...numericVotes].sort((a, b) => a - b);
-        const median =
-          sorted.length % 2 === 0
-            ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-            : sorted[Math.floor(sorted.length / 2)];
 
         return {
           average: avg.toFixed(1),
-          median: median.toFixed(1),
           min: Math.min(...numericVotes),
           max: Math.max(...numericVotes),
         };
@@ -508,9 +503,11 @@ export default function RoomPage() {
                 value={storyTitle}
                 onChange={(e) => setStoryTitle(e.target.value)}
                 onFocus={() => setIsEditingStoryTitle(true)}
-                onBlur={() => {
-                  setIsEditingStoryTitle(false);
-                  handleUpdateStory();
+                onBlur={async () => {
+                  // Save first, then allow server updates after a delay
+                  await handleUpdateStory();
+                  // Keep blocking server updates for a bit to prevent race condition
+                  setTimeout(() => setIsEditingStoryTitle(false), 500);
                 }}
                 placeholder="Enter story title..."
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -585,17 +582,11 @@ export default function RoomPage() {
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
                     Statistics
                   </h2>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="text-center">
                       <div className="text-sm text-gray-600 dark:text-gray-400">Average</div>
                       <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
                         {voteStats.average}
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Median</div>
-                      <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                        {voteStats.median}
                       </div>
                     </div>
                     <div className="text-center">
@@ -654,10 +645,11 @@ export default function RoomPage() {
                                 <button
                                   onClick={handleSaveNewName}
                                   disabled={savingNameInProgress}
-                                  className="text-green-600 dark:text-green-400 text-xs hover:underline disabled:opacity-50 flex items-center gap-1"
+                                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[36px]"
+                                  title="Save name"
                                 >
                                   {savingNameInProgress ? (
-                                    <div className="w-3 h-3 border-2 border-green-600 dark:border-green-400 border-t-transparent rounded-full animate-spin"></div>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                   ) : (
                                     '✓'
                                   )}
@@ -665,7 +657,8 @@ export default function RoomPage() {
                                 <button
                                   onClick={handleCancelEditName}
                                   disabled={savingNameInProgress}
-                                  className="text-red-600 dark:text-red-400 text-xs hover:underline disabled:opacity-50"
+                                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded disabled:opacity-50 disabled:cursor-not-allowed mr-2"
+                                  title="Cancel"
                                 >
                                   ✕
                                 </button>
