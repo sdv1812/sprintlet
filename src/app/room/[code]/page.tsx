@@ -29,6 +29,7 @@ export default function RoomPage() {
   const [resettingInProgress, setResettingInProgress] = useState(false);
   const [updatingStoryInProgress, setUpdatingStoryInProgress] = useState(false);
   const [savingNameInProgress, setSavingNameInProgress] = useState(false);
+  const [isEditingStoryTitle, setIsEditingStoryTitle] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -91,7 +92,10 @@ export default function RoomPage() {
       switch (message.type) {
         case 'ROOM_SNAPSHOT':
           setSnapshot(message.snapshot);
-          setStoryTitle(message.snapshot.meta.storyTitle);
+          // Only update story title if user is not actively editing it
+          if (!isEditingStoryTitle) {
+            setStoryTitle(message.snapshot.meta.storyTitle);
+          }
           // Update selected vote if we have one
           if (message.snapshot.votes[clientId]) {
             setSelectedVote(message.snapshot.votes[clientId]);
@@ -114,7 +118,7 @@ export default function RoomPage() {
           break;
       }
     },
-    [clientId, router]
+    [clientId, router, isEditingStoryTitle]
   );
 
   const startPolling = useCallback(() => {
@@ -503,7 +507,11 @@ export default function RoomPage() {
                 type="text"
                 value={storyTitle}
                 onChange={(e) => setStoryTitle(e.target.value)}
-                onBlur={handleUpdateStory}
+                onFocus={() => setIsEditingStoryTitle(true)}
+                onBlur={() => {
+                  setIsEditingStoryTitle(false);
+                  handleUpdateStory();
+                }}
                 placeholder="Enter story title..."
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
